@@ -25,7 +25,7 @@
 # buying me a coffee https://ko-fi.com/geeks_r_us
 
 # die when an error occurs
-set -e
+set -eEuo pipefail
 
 WORKDIR="$(pwd)/anbox-work"
 
@@ -37,7 +37,7 @@ else
 fi
 
 # clean downloads
-if [ "$1" = "--clean" ]; then
+if [ "${1:-}" = "--clean" ]; then
    $SUDO rm -rf "$WORKDIR"
    exit 0
 fi
@@ -48,16 +48,16 @@ if [ ! "$(ps -p $$ -oargs= | awk '{print $1}' | grep -E 'bash$')" ]; then
 	 exit 1
 fi
 
+MISSING_PACKAGES=()
+
 # check if lzip is installed
 if [ ! "$(which lzip)" ]; then
-	echo -e "lzip is not installed. Please install lzip.\nExample: sudo apt install lzip"
-	exit 1
+  MISSING_PACKAGES+=("lzip")
 fi
 
 # check if squashfs-tools are installed
 if [ ! "$(which mksquashfs)" ] || [ ! "$(which unsquashfs)" ]; then
-	echo -e "squashfs-tools is not installed. Please install squashfs-tools.\nExample: sudo apt install squashfs-tools"
-	exit 1
+  MISSING_PACKAGES+=("squashfs-tools")
 else
 	MKSQUASHFS=$(which mksquashfs)
 	UNSQUASHFS=$(which unsquashfs)
@@ -65,42 +65,49 @@ fi
 
 # check if wget is installed
 if [ ! "$(which wget)" ]; then
-	echo -e "wget is not installed. Please install wget.\nExample: sudo apt install wget"
-	exit 1
+  MISSING_PACKAGES+=("wget")
 else
 	WGET=$(which wget)
 fi
 
-# check if curl is installed
-if [ ! "$(which curl)" ]; then
-	echo -e "curl is not installed. Please install curl.\nExample: sudo apt install curl"
-	exit 1
+# check if jq is installed
+if [ ! "$(which jq)" ]; then
+  MISSING_PACKAGES+=("jq")
 else
-	CURL=$(which curl)
+	JQ=$(which jq)
 fi
 
 # check if unzip is installed
 if [ ! "$(which unzip)" ]; then
-	echo -e "unzip is not installed. Please install unzip.\nExample: sudo apt install unzip"
-	exit 1
+  MISSING_PACKAGES+=("unzip")
 else
 	UNZIP=$(which unzip)
 fi
 
 # check if tar is installed
 if [ ! "$(which tar)" ]; then
-	echo -e "tar is not installed. Please install tar.\nExample: sudo apt install tar"
-	exit 1
+  MISSING_PACKAGES+=("tar")
 else
 	TAR=$(which tar)
+fi
+
+if [ "${#MISSING_PACKAGES[@]}" -gt 0 ] ; then
+	cat <<EOF >&2
+Missing packages: ${MISSING_PACKAGES[@]}
+Please install them.
+Example:
+  sudo apt install ${MISSING_PACKAGES[@]}
+
+EOF
+  exit 1
 fi
 
 
 
 # get latest releasedate based on tag_name for latest x86_64 build
-OPENGAPPS_RELEASEDATE="$($CURL -s https://api.github.com/repos/opengapps/x86_64/releases/latest | head -n 10 | grep tag_name | grep -o "\"[0-9][0-9]*\"" | grep -o "[0-9]*")" 
+OPENGAPPS_RELEASEDATE="$($WGET -q -O - https://api.github.com/repos/opengapps/x86_64/releases/latest | $JQ -r '.tag_name')"
 OPENGAPPS_FILE="open_gapps-x86_64-7.1-pico-$OPENGAPPS_RELEASEDATE.zip"
-OPENGAPPS_URL="https://sourceforge.net/projects/opengapps/files/x86_64/$OPENGAPPS_RELEASEDATE/$OPENGAPPS_FILE"
+OPENGAPPS_URL="https://downloads.sourceforge.net/project/opengapps/x86_64/$OPENGAPPS_RELEASEDATE/$OPENGAPPS_FILE?r=&ts=$(date +%s)&use_mirror=autoselect"
 
 HOUDINI_Y_URL="http://dl.android-x86.org/houdini/7_y/houdini.sfs"
 HOUDINI_Z_URL="http://dl.android-x86.org/houdini/7_z/houdini.sfs"
@@ -171,9 +178,9 @@ cd "$WORKDIR"
 echo "Loading open gapps from $OPENGAPPS_URL"
 while : ;do
  if [ ! -f ./$OPENGAPPS_FILE ]; then
-	 $WGET -q --show-progress $OPENGAPPS_URL
+	 $WGET -q --show-progress $OPENGAPPS_URL -O $OPENGAPPS_FILE
  else
-	 $WGET -q --show-progress -c $OPENGAPPS_URL
+	 $WGET -q --show-progress -c $OPENGAPPS_URL -O $OPENGAPPS_FILE
  fi
  [ $? = 0 ] && break
 done
